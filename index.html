@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>선형회귀 · 비선형회귀 실습</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --ink: #1d2b44;
+    --muted: #5d6b82;
+    --paper: #f6f8fb;
+    --grid: #e3e8f0;
+    --panel: #ffffff;
+    --line: #d0d7e2;
+    --linear: #d64545;
+    --poly: #23845a;
+    --train: #4a7fc1;
+    --test: #e8963a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    color: var(--ink);
+    background-color: var(--paper);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 24px 24px;
+    line-height: 1.6;
+  }
+  header { max-width: 1180px; margin: 0 auto; padding: 40px 24px 16px; }
+  h1 { font-size: 1.9rem; margin: 0 0 6px; letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); max-width: 70ch; }
+  main {
+    max-width: 1180px; margin: 0 auto; padding: 16px 24px 48px;
+    display: grid; grid-template-columns: 340px 1fr; gap: 20px; align-items: start;
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px;
+  }
+  .controls section + section, .output section + section { margin-top: 16px; }
+  h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  label { display: block; font-size: 0.9rem; font-weight: 500; margin: 12px 0 4px; }
+  .hint { font-size: 0.82rem; color: var(--muted); margin: 4px 0 0; }
+  textarea, input, select {
+    width: 100%; font: inherit; font-size: 0.92rem; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; background: #fff;
+  }
+  textarea { height: 170px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button {
+    font: inherit; font-weight: 500; border-radius: 6px; padding: 9px 14px; cursor: pointer;
+    border: 1px solid var(--ink); background: #fff; color: var(--ink);
+  }
+  button.primary { background: var(--ink); color: #fff; width: 100%; margin-top: 16px; padding: 12px; font-size: 1rem; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #8fb3e6; outline-offset: 1px; }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btns button { flex: 1; font-size: 0.85rem; }
+  .msg { font-size: 0.88rem; margin-top: 10px; min-height: 1.2em; }
+  .msg.error { color: var(--linear); }
+  .chart-box { position: relative; height: 420px; }
+  .chart-box.small { height: 240px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+  .eq { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; }
+  .predict { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
+  .predict-out { margin-top: 12px; font-size: 0.95rem; }
+  .predict-out strong { font-size: 1.15rem; }
+  .empty { color: var(--muted); text-align: center; padding: 60px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>선형회귀 · 비선형회귀 실습</h1>
+  <p>데이터를 넣고 <b>학습 시작</b>을 누르면 선형회귀(y = wx + b)와 2차 다항회귀(y = w₂x² + w₁x + b)를 경사하강법으로 학습해서 그래프로 비교합니다.</p>
+</header>
+
+<main>
+  <div class="controls">
+    <section>
+      <h2>데이터 입력</h2>
+      <label for="dataset">예제 데이터 (UCI Auto MPG 공개 데이터)</label>
+      <select id="dataset">
+        <option value="horsepower">마력 → 연비</option>
+        <option value="weight">차량 무게 → 연비</option>
+        <option value="displacement">배기량 → 연비</option>
+      </select>
+      <div class="btns">
+        <button type="button" id="loadBtn">예제 불러오기</button>
+        <button type="button" id="clearBtn">비우기</button>
+      </div>
+      <label for="data">x, y 값 (한 줄에 한 쌍)</label>
+      <textarea id="data" placeholder="예)&#10;1, 2.1&#10;2, 3.9&#10;3, 9.2"></textarea>
+      <p class="hint">쉼표, 공백, 탭으로 구분합니다. 직접 값을 입력해도 됩니다.</p>
+      <p class="msg" id="dataMsg"></p>
+    </section>
+
+    <section>
+      <h2>학습 설정</h2>
+      <div class="row">
+        <div>
+          <label for="lrLin">선형 학습률</label>
+          <input id="lrLin" type="number" step="0.01" min="0.0001" value="0.1">
+        </div>
+        <div>
+          <label for="epLin">선형 반복 횟수</label>
+          <input id="epLin" type="number" step="100" min="1" value="1000">
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="lrPoly">비선형 학습률</label>
+          <input id="lrPoly" type="number" step="0.01" min="0.0001" value="0.05">
+        </div>
+        <div>
+          <label for="epPoly">비선형 반복 횟수</label>
+          <input id="epPoly" type="number" step="100" min="1" value="3000">
+        </div>
+      </div>
+      <label for="testRatio">테스트 데이터 비율</label>
+      <select id="testRatio">
+        <option value="0.2">20%</option>
+        <option value="0.3">30%</option>
+        <option value="0">사용 안 함 (전체로 학습·평가)</option>
+      </select>
+      <button type="button" class="primary" id="runBtn">학습 시작</button>
+      <p class="msg" id="runMsg"></p>
+    </section>
+  </div>
+
+  <div class="output">
+    <section>
+      <h2>회귀 결과 그래프</h2>
+      <div class="chart-box"><canvas id="mainChart"></canvas></div>
+      <p class="empty" id="emptyState">왼쪽에서 예제를 불러오거나 값을 입력한 뒤 학습 시작을 눌러 주세요.</p>
+    </section>
+
+    <section>
+      <h2>성능 비교</h2>
+      <table>
+        <thead><tr><th>모델</th><th>학습된 식</th><th>MSE</th><th>R²</th></tr></thead>
+        <tbody id="resultBody"><tr><td colspan="4" style="color:var(--muted)">아직 학습 전입니다.</td></tr></tbody>
+      </table>
+      <p class="hint">MSE와 R²는 테스트 데이터 기준입니다. 테스트 비율이 "사용 안 함"이면 전체 데이터 기준입니다.</p>
+    </section>
+
+    <section>
+      <h2>값 예측하기</h2>
+      <div class="predict">
+        <div>
+          <label for="xInput">x 값 입력</label>
+          <input id="xInput" type="number" step="any" placeholder="예) 150">
+        </div>
+        <button type="button" id="predictBtn">예측</button>
+      </div>
+      <div class="predict-out" id="predictOut"></div>
+    </section>
+
+    <section>
+      <h2>학습 손실(MSE) 변화</h2>
+      <div class="chart-box small"><canvas id="lossChart"></canvas></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const DATA_URL = "https://raw.githubusercontent.com/mwaskom/seaborn-data/master/mpg.csv";
+const $ = id => document.getElementById(id);
+let mainChart = null, lossChart = null, models = null;
+
+/* ---------- 데이터 ---------- */
+function parseData(text) {
+  const xs = [], ys = [];
+  let bad = 0;
+  text.split(/\r?\n/).forEach(line => {
+    const t = line.trim();
+    if (!t) return;
+    const parts = t.split(/[,\s\t]+/).map(Number);
+    if (parts.length >= 2 && isFinite(parts[0]) && isFinite(parts[1])) {
+      xs.push(parts[0]); ys.push(parts[1]);
+    } else bad++;
+  });
+  return { xs, ys, bad };
+}
+
+async function loadExample() {
+  const col = $("dataset").value;
+  const msg = $("dataMsg");
+  msg.className = "msg"; msg.textContent = "불러오는 중...";
+  try {
+    const res = await fetch(DATA_URL);
+    if (!res.ok) throw new Error(res.status);
+    const lines = (await res.text()).trim().split(/\r?\n/);
+    const head = lines[0].split(",");
+    const xi = head.indexOf(col), yi = head.indexOf("mpg");
+    const out = [];
+    for (let i = 1; i < lines.length; i++) {
+      const c = lines[i].split(",");
+      const x = parseFloat(c[xi]), y = parseFloat(c[yi]);
+      if (isFinite(x) && isFinite(y)) out.push(x + ", " + y);
+    }
+    $("data").value = out.join("\n");
+    msg.textContent = `Auto MPG 데이터 ${out.length}개를 불러왔습니다.`;
+  } catch (e) {
+    msg.className = "msg error";
+    msg.textContent = "예제 데이터를 불러오지 못했습니다. 인터넷 연결을 확인하거나 값을 직접 입력해 주세요.";
+  }
+}
+
+/* ---------- 유틸 ---------- */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function split(xs, ys, ratio, seed = 42) {
+  const idx = xs.map((_, i) => i);
+  const rand = mulberry32(seed);
+  for (let i = idx.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [idx[i], idx[j]] = [idx[j], idx[i]];
+  }
+  const nTest = Math.floor(xs.length * ratio);
+  const pick = arr => arr.map(i => [xs[i], ys[i]]);
+  return { test: pick(idx.slice(0, nTest)), train: pick(idx.slice(nTest)) };
+}
+const mean = a => a.reduce((s, v) => s + v, 0) / a.length;
+const std = a => { const m = mean(a); return Math.sqrt(mean(a.map(v => (v - m) ** 2))); };
+const mse = (y, p) => mean(y.map((v, i) => (v - p[i]) ** 2));
+function r2(y, p) {
+  const m = mean(y);
+  const ssRes = y.reduce((s, v, i) => s + (v - p[i]) ** 2, 0);
+  const ssTot = y.reduce((s, v) => s + (v - m) ** 2, 0);
+  return 1 - ssRes / ssTot;
+}
+
+/* ---------- 경사하강법 ---------- */
+function trainLinear(x, y, lr, epochs) {
+  let w = 0, b = 0; const n = x.length, loss = [];
+  for (let e = 0; e < epochs; e++) {
+    let dw = 0, db = 0, l = 0;
+    for (let i = 0; i < n; i++) {
+      const err = w * x[i] + b - y[i];
+      dw += err * x[i]; db += err; l += err * err;
+    }
+    w -= lr * (2 / n) * dw;
+    b -= lr * (2 / n) * db;
+    loss.push(l / n);
+  }
+  return { w, b, loss, predict: v => w * v + b };
+}
+function trainPoly(x, y, lr, epochs) {
+  let w2 = 0, w1 = 0, b = 0; const n = x.length, loss = [];
+  for (let e = 0; e < epochs; e++) {
+    let d2 = 0, d1 = 0, db = 0, l = 0;
+    for (let i = 0; i < n; i++) {
+      const err = w2 * x[i] ** 2 + w1 * x[i] + b - y[i];
+      d2 += err * x[i] ** 2; d1 += err * x[i]; db += err; l += err * err;
+    }
+    w2 -= lr * (2 / n) * d2;
+    w1 -= lr * (2 / n) * d1;
+    b -= lr * (2 / n) * db;
+    loss.push(l / n);
+  }
+  return { w2, w1, b, loss, predict: v => w2 * v * v + w1 * v + b };
+}
+
+/* ---------- 식 표시 (표준화 전 원래 x 기준으로 변환) ---------- */
+const fmt = v => (Math.abs(v) < 0.001 && v !== 0 ? v.toExponential(3) : v.toFixed(4));
+const term = (c, s) => (c < 0 ? " − " : " + ") + fmt(Math.abs(c)) + s;
+function linEq(m, mu, sd) {
+  const a1 = m.w / sd, a0 = m.b - m.w * mu / sd;
+  return "y = " + fmt(a1) + "x" + term(a0, "");
+}
+function polyEq(m, mu, sd) {
+  const a2 = m.w2 / sd ** 2;
+  const a1 = -2 * m.w2 * mu / sd ** 2 + m.w1 / sd;
+  const a0 = m.w2 * mu ** 2 / sd ** 2 - m.w1 * mu / sd + m.b;
+  return "y = " + fmt(a2) + "x²" + term(a1, "x") + term(a0, "");
+}
+
+/* ---------- 실행 ---------- */
+function run() {
+  const msg = $("runMsg"); msg.className = "msg"; msg.textContent = "";
+  const { xs, ys, bad } = parseData($("data").value);
+  if (xs.length < 3) {
+    msg.className = "msg error";
+    msg.textContent = "x, y 값을 3쌍 이상 입력해 주세요.";
+    return;
+  }
+  let ratio = parseFloat($("testRatio").value);
+  if (ratio > 0 && Math.floor(xs.length * ratio) < 2) ratio = 0;
+  const { train, test } = split(xs, ys, ratio);
+  const evalSet = ratio > 0 ? test : train;
+
+  const xTr = train.map(p => p[0]), yTr = train.map(p => p[1]);
+  const mu = mean(xTr), sd = std(xTr) || 1;
+  const z = v => (v - mu) / sd;
+  const zTr = xTr.map(z);
+
+  const lin = trainLinear(zTr, yTr, +$("lrLin").value, Math.max(1, +$("epLin").value));
+  const poly = trainPoly(zTr, yTr, +$("lrPoly").value, Math.max(1, +$("epPoly").value));
+  if (![lin.w, lin.b, poly.w2, poly.w1, poly.b].every(isFinite)) {
+    msg.className = "msg error";
+    msg.textContent = "손실이 발산했습니다. 학습률을 더 작게 바꿔 보세요.";
+    return;
+  }
+
+  const yEv = evalSet.map(p => p[1]), xEv = evalSet.map(p => z(p[0]));
+  const pl = xEv.map(lin.predict), pp = xEv.map(poly.predict);
+  const res = {
+    lin: { mse: mse(yEv, pl), r2: r2(yEv, pl) },
+    poly: { mse: mse(yEv, pp), r2: r2(yEv, pp) }
+  };
+  models = { lin, poly, z };
+
+  $("resultBody").innerHTML = `
+    <tr><td><span class="swatch" style="background:var(--linear)"></span>선형회귀</td>
+      <td class="eq">${linEq(lin, mu, sd)}</td><td>${res.lin.mse.toFixed(3)}</td><td>${res.lin.r2.toFixed(3)}</td></tr>
+    <tr><td><span class="swatch" style="background:var(--poly)"></span>비선형회귀 (2차)</td>
+      <td class="eq">${polyEq(poly, mu, sd)}</td><td>${res.poly.mse.toFixed(3)}</td><td>${res.poly.r2.toFixed(3)}</td></tr>`;
+  msg.textContent = `데이터 ${xs.length}개 (학습 ${train.length} / 평가 ${evalSet.length})로 학습했습니다.` +
+    (bad ? ` 숫자가 아닌 줄 ${bad}개는 건너뛰었습니다.` : "");
+
+  drawMain(train, ratio > 0 ? test : [], lin, poly, z, res);
+  drawLoss(lin.loss, poly.loss);
+  if ($("xInput").value) predict();
+}
+
+function drawMain(train, test, lin, poly, z, res) {
+  $("emptyState").style.display = "none";
+  const all = train.concat(test).map(p => p[0]);
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const grid = Array.from({ length: 200 }, (_, i) => lo + (hi - lo) * i / 199);
+  const css = getComputedStyle(document.documentElement);
+  const c = n => css.getPropertyValue(n).trim();
+  const ds = [
+    { type: "scatter", label: "학습 데이터", data: train.map(p => ({ x: p[0], y: p[1] })), backgroundColor: c("--train") + "99", pointRadius: 3 },
+    { type: "line", label: `선형회귀 (R²=${res.lin.r2.toFixed(3)})`, data: grid.map(x => ({ x, y: lin.predict(z(x)) })), borderColor: c("--linear"), borderWidth: 2.5, pointRadius: 0 },
+    { type: "line", label: `비선형회귀 2차 (R²=${res.poly.r2.toFixed(3)})`, data: grid.map(x => ({ x, y: poly.predict(z(x)) })), borderColor: c("--poly"), borderWidth: 2.5, pointRadius: 0 }
+  ];
+  if (test.length) ds.splice(1, 0, { type: "scatter", label: "테스트 데이터", data: test.map(p => ({ x: p[0], y: p[1] })), backgroundColor: c("--test") + "cc", pointRadius: 3 });
+  if (mainChart) mainChart.destroy();
+  mainChart = new Chart($("mainChart"), {
+    data: { datasets: ds },
+    options: {
+      maintainAspectRatio: false, animation: false,
+      scales: { x: { type: "linear", title: { display: true, text: "x" } }, y: { title: { display: true, text: "y" } } },
+      plugins: { legend: { position: "bottom" } }
+    }
+  });
+}
+
+function drawLoss(l1, l2) {
+  const css = getComputedStyle(document.documentElement);
+  const c = n => css.getPropertyValue(n).trim();
+  if (lossChart) lossChart.destroy();
+  lossChart = new Chart($("lossChart"), {
+    type: "line",
+    data: { datasets: [
+      { label: "선형회귀", data: l1.map((y, x) => ({ x, y })), borderColor: c("--linear"), pointRadius: 0, borderWidth: 2 },
+      { label: "비선형회귀 (2차)", data: l2.map((y, x) => ({ x, y })), borderColor: c("--poly"), pointRadius: 0, borderWidth: 2 }
+    ] },
+    options: {
+      maintainAspectRatio: false, animation: false, parsing: false,
+      scales: { x: { type: "linear", title: { display: true, text: "반복 횟수 (epoch)" } }, y: { type: "logarithmic", title: { display: true, text: "MSE (로그 스케일)" } } },
+      plugins: { legend: { position: "bottom" } }
+    }
+  });
+}
+
+function predict() {
+  const out = $("predictOut");
+  if (!models) { out.textContent = "먼저 학습 시작을 눌러 주세요."; return; }
+  const x = parseFloat($("xInput").value);
+  if (!isFinite(x)) { out.textContent = "x 값을 숫자로 입력해 주세요."; return; }
+  const zx = models.z(x);
+  out.innerHTML = `x = ${x} 일 때<br>
+    <span class="swatch" style="background:var(--linear)"></span>선형회귀 예측: <strong>${models.lin.predict(zx).toFixed(3)}</strong><br>
+    <span class="swatch" style="background:var(--poly)"></span>비선형회귀 예측: <strong>${models.poly.predict(zx).toFixed(3)}</strong>`;
+}
+
+$("loadBtn").addEventListener("click", loadExample);
+$("clearBtn").addEventListener("click", () => { $("data").value = ""; $("dataMsg").textContent = ""; });
+$("runBtn").addEventListener("click", run);
+$("predictBtn").addEventListener("click", predict);
+$("xInput").addEventListener("keydown", e => { if (e.key === "Enter") predict(); });
+</script>
+</body>
+</html>
